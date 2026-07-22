@@ -1,5 +1,6 @@
 """根据合并后的数据生成单文件 HTML 看板 — Fluent Design + Glassmorphism 风格"""
 import html
+import json
 import re
 import sys
 from datetime import datetime, timezone, timedelta
@@ -76,38 +77,53 @@ def build_html(data, out_path=LATEST_HTML):
 
     # --- sections HTML ---
     sections_html = []
+    items_json_list = []  # 完整条目数据，供 modal 详情使用
+    idx = 0
     for s in data["sections"]:
         label = s["label"]
         style = CATEGORY_STYLE[label]
         items_html = []
         for it in s["items"]:
+            idx += 1
             seq = it["seq"]
-            title = _highlight(it.get("title") or "", highlight_terms)
+            raw_title = it.get("title") or ""
+            raw_title_en = it.get("title_en") or ""
+            raw_summary = it.get("summary") or ""
+            title = _highlight(raw_title, highlight_terms)
             source = html.escape(it.get("source") or "")
             rel = _relative_time(it.get("publishedAt"), now_utc)
             abs_t = _absolute_time(it.get("publishedAt"))
-            summary = _highlight(_truncate(it.get("summary")), highlight_terms)
+            summary = _highlight(_truncate(raw_summary), highlight_terms)
             url = html.escape(it.get("url") or "")
             hits = it.get("hits", [])
             hits_html = "".join(
                 f'<span class="hit-tag" data-hit="{html.escape(h)}">{html.escape(h)}</span>' for h in hits
             )
             cat = it.get("category") or "industry"
-            items_html.append(f"""        <article class="card reveal" data-category="{cat}" data-hits="{','.join(hits)}" style="--cat-color:{style['color']}">
+            # 收集完整数据供 modal 用
+            items_json_list.append({
+                "seq": seq, "title": raw_title, "title_en": raw_title_en,
+                "summary": raw_summary, "source": it.get("source") or "",
+                "url": it.get("url") or "", "time_rel": rel, "time_abs": abs_t,
+                "category": cat, "category_label": label,
+                "category_color": style['color'], "hits": hits,
+            })
+            items_html.append(f"""        <article class="card reveal" data-idx="{idx-1}" data-category="{cat}" data-hits="{','.join(hits)}" style="--cat-color:{style['color']}" tabindex="0" role="button" aria-label="查看详情">
           <div class="card-shine"></div>
           <div class="seq-badge">{seq}</div>
           <div class="card-body">
             <div class="card-head">
-              <a class="card-title" href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>
+              <h3 class="card-title">{title}</h3>
               <div class="card-hits">{hits_html}</div>
             </div>
             <div class="card-meta">
               <span class="source" title="{source}">{source}</span>
               <span class="dot">·</span>
               <span class="time" title="{abs_t} 北京时间">{rel}</span>
+              <span class="dot">·</span>
+              <span class="card-expand">详情</span>
             </div>
             {f'<p class="card-summary">{summary}</p>' if summary else ''}
-            <a class="card-link" href="{url}" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
           </div>
         </article>""")
         sections_html.append(f"""    <section class="cat-section" id="cat-{s['category']}" data-cat="{s['category']}">
@@ -432,6 +448,91 @@ def build_html(data, out_path=LATEST_HTML):
     .reveal {{ opacity: 1; transform: none; transition: none; }}
     * {{ scroll-behavior: auto; }}
   }}
+
+  /* --- 详情 Modal（毛玻璃 + 渐变） --- */
+  .modal-overlay {{
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(15,15,30,0.45);
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.3s var(--ease), visibility 0.3s;
+  }}
+  .modal-overlay.open {{ opacity: 1; visibility: visible; }}
+  .modal {{
+    position: relative;
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border-hover);
+    border-radius: 20px;
+    box-shadow: 0 24px 64px rgba(20,20,50,0.2), 0 8px 24px rgba(20,20,50,0.1);
+    max-width: 680px; width: 100%; max-height: 85vh; overflow-y: auto;
+    padding: 32px 36px 28px;
+    transform: scale(0.94) translateY(12px); opacity: 0;
+    transition: transform 0.35s var(--ease-out), opacity 0.35s var(--ease-out);
+  }}
+  .modal-overlay.open .modal {{ transform: scale(1) translateY(0); opacity: 1; }}
+  .modal::before {{
+    content: ''; position: absolute; inset: 0; border-radius: 20px; pointer-events: none;
+    background: linear-gradient(135deg, var(--m-cat-color, rgba(124,58,237,0.08)), transparent 60%);
+  }}
+  .modal-close {{
+    position: absolute; top: 16px; right: 16px; z-index: 2;
+    width: 36px; height: 36px; border-radius: 10px;
+    border: 1px solid var(--glass-border); background: rgba(255,255,255,0.4);
+    color: var(--text-2); font-size: 20px; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s var(--ease); font-family: inherit;
+  }}
+  .modal-close:hover {{ background: rgba(255,255,255,0.7); color: var(--text); transform: rotate(90deg); }}
+  .modal-cat {{
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: var(--m-cat-color, #7c3aed);
+    margin-bottom: 14px; position: relative;
+  }}
+  .modal-cat::before {{ content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--m-cat-color, #7c3aed); box-shadow: 0 0 8px var(--m-cat-color, #7c3aed); }}
+  .modal-title {{
+    font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.4;
+    margin-bottom: 8px; letter-spacing: -0.3px; position: relative;
+  }}
+  .modal-title-en {{
+    font-size: 14px; color: var(--text-3); font-style: italic;
+    margin-bottom: 18px; position: relative; line-height: 1.5;
+  }}
+  .modal-meta {{
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text-3); margin-bottom: 20px;
+    padding: 10px 14px; background: rgba(255,255,255,0.35); border-radius: 10px;
+    border: 1px solid var(--glass-border); position: relative;
+  }}
+  .modal-meta .m-src {{ color: var(--text-2); font-weight: 500; }}
+  .modal-meta .m-seq {{ font-variant-numeric: tabular-nums; font-weight: 600; color: var(--m-cat-color, #7c3aed); }}
+  .modal-meta .m-sep {{ opacity: 0.4; }}
+  .modal-summary {{
+    font-size: 15px; color: var(--text); line-height: 1.8; margin-bottom: 20px;
+    position: relative;
+  }}
+  .modal-hits {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px; position: relative; }}
+  .modal-hits .hit-tag {{ font-size: 12px; padding: 3px 10px; }}
+  .modal-link {{
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 24px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--m-cat-color, #7c3aed), color-mix(in srgb, var(--m-cat-color, #7c3aed) 65%, #000));
+    color: #fff; text-decoration: none; font-size: 14px; font-weight: 600;
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--m-cat-color, #7c3aed) 35%, transparent);
+    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+    position: relative;
+  }}
+  .modal-link:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px color-mix(in srgb, var(--m-cat-color, #7c3aed) 45%, transparent); }}
+  .card {{ cursor: pointer; }}
+  .card-title {{ cursor: pointer; }}
+  .card-expand {{
+    font-size: 11px; color: var(--cat-color); font-weight: 600;
+    padding: 2px 8px; border-radius: 4px; background: color-mix(in srgb, var(--cat-color) 12%, transparent);
+  }}
 </style>
 </head>
 <body>
@@ -498,6 +599,23 @@ def build_html(data, out_path=LATEST_HTML):
   </footer>
 
 </div>
+
+<!-- 详情 Modal -->
+<div class="modal-overlay" id="modalOverlay" aria-hidden="true">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button class="modal-close" id="modalClose" aria-label="关闭">×</button>
+    <div class="modal-cat" id="modalCat"></div>
+    <h2 class="modal-title" id="modalTitle"></h2>
+    <div class="modal-title-en" id="modalTitleEn"></div>
+    <div class="modal-meta" id="modalMeta"></div>
+    <div class="modal-summary" id="modalSummary"></div>
+    <div class="modal-hits" id="modalHits"></div>
+    <a class="modal-link" id="modalLink" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+  </div>
+</div>
+
+<!-- 完整条目数据（供 modal 读取，避免截断） -->
+<script id="items-data" type="application/json">{json.dumps(items_json_list, ensure_ascii=False)}</script>
 
 <script>
 (function() {{
@@ -615,6 +733,70 @@ def build_html(data, out_path=LATEST_HTML):
       searchTerm = e.target.value.trim();
       applyFilters();
     }}, 120);
+  }});
+
+  // --- 详情 Modal ---
+  const itemsData = JSON.parse(document.getElementById('items-data').textContent);
+  const overlay = document.getElementById('modalOverlay');
+  const mCat = document.getElementById('modalCat');
+  const mTitle = document.getElementById('modalTitle');
+  const mTitleEn = document.getElementById('modalTitleEn');
+  const mMeta = document.getElementById('modalMeta');
+  const mSummary = document.getElementById('modalSummary');
+  const mHits = document.getElementById('modalHits');
+  const mLink = document.getElementById('modalLink');
+  const mClose = document.getElementById('modalClose');
+  const highlightTerms = {json.dumps(highlight_terms)};
+
+  // 高亮函数（JS 版，转义 + 正则替换）
+  function esc(s) {{
+    const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+  }}
+  function hl(text) {{
+    if (!text) return '';
+    const safe = esc(text);
+    const terms = [...new Set(highlightTerms)].sort((a,b) => b.length - a.length);
+    if (!terms.length) return safe;
+    const re = new RegExp('(' + terms.map(t => t.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&')).join('|') + ')', 'gi');
+    return safe.replace(re, m => '<mark>' + m + '</mark>');
+  }}
+
+  function openModal(idx) {{
+    const it = itemsData[idx];
+    if (!it) return;
+    overlay.style.setProperty('--m-cat-color', it.category_color);
+    mCat.textContent = it.category_label;
+    mTitle.innerHTML = hl(it.title);
+    mTitleEn.textContent = it.title_en || '';
+    mTitleEn.style.display = it.title_en ? '' : 'none';
+    mMeta.innerHTML = '<span class="m-seq">#' + it.seq + '</span>' +
+                      '<span class="m-sep">/</span><span class="m-src">' + esc(it.source) + '</span>' +
+                      '<span class="m-sep">/</span><span>' + it.time_abs + ' 北京时间</span>' +
+                      '<span class="m-sep">/</span><span>' + it.time_rel + '</span>';
+    mSummary.innerHTML = hl(it.summary);
+    mHits.innerHTML = it.hits.map(h => '<span class="hit-tag">' + esc(h) + '</span>').join('');
+    mLink.href = it.url;
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }}
+  function closeModal() {{
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }}
+
+  // 点击卡片打开 modal
+  document.querySelectorAll('.card').forEach(card => {{
+    card.addEventListener('click', (e) => openModal(parseInt(card.dataset.idx, 10)));
+    card.addEventListener('keydown', (e) => {{
+      if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); openModal(parseInt(card.dataset.idx, 10)); }}
+    }});
+  }});
+  mClose.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => {{ if (e.target === overlay) closeModal(); }});
+  document.addEventListener('keydown', (e) => {{
+    if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
   }});
 }})();
 </script>
