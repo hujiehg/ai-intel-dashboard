@@ -773,16 +773,30 @@ def build_html(data, out_path=LATEST_HTML):
     const safe = esc(text);
     const terms = [...new Set(highlightTerms)].sort((a,b) => b.length - a.length);
     if (!terms.length) return safe;
-    // 用 lookbehind/lookahead 排除连字符相邻，避免在 Qwen-Image-3.0 这类复合词中拆词
+    // 兼容所有浏览器（不用 lookbehind）：用 callback 检查前后字符
+    // 如果前后是字母数字或连字符，说明在复合词中（如 Qwen-Image-3.0），不替换
     const escTerms = terms.map(t => t.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&'));
-    const re = new RegExp('(?<![a-zA-Z0-9-])(' + escTerms.join('|') + ')(?![a-zA-Z0-9-])', 'gi');
-    return safe.replace(re, m => '<mark>' + m + '</mark>');
+    const re = new RegExp('(' + escTerms.join('|') + ')', 'gi');
+    return safe.replace(re, (match, offset, str) => {{
+      const before = offset > 0 ? str[offset - 1] : '';
+      const after = str[offset + match.length] || '';
+      if (/[a-zA-Z0-9-]/.test(before) || /[a-zA-Z0-9-]/.test(after)) return match;
+      return '<mark>' + match + '</mark>';
+    }});
   }}
 
   // 把 summary 拆成多段（按句末标点 + 换行）
   function splitParagraphs(text) {{
     if (!text) return [];
-    return text.split(/(?<=[。！？!?])\s+|(?<=\.)\s+|\n+/).map(s => s.trim()).filter(Boolean);
+    // 兼容写法（不用 lookbehind）：用 match + 捕获组保留分隔符
+    return text.split(/([。！？!?])\s*|\.\s+|\n+/).reduce((acc, p, i, arr) => {{
+      if (/[。！？!?]/.test(p) && acc.length > 0) {{
+        acc[acc.length - 1] += p;
+      }} else if (p && p.trim()) {{
+        acc.push(p);
+      }}
+      return acc;
+    }}, []).map(s => s.trim()).filter(Boolean);
   }}
   // 从 URL 提取 host 作为参考
   function urlHost(u) {{
