@@ -789,7 +789,7 @@ def build_html(data, out_path=LATEST_HTML):
   function splitParagraphs(text) {{
     if (!text) return [];
     // 兼容写法（不用 lookbehind）：用 match + 捕获组保留分隔符
-    return text.split(/([。！？!?])\s*|\.\s+|\n+/).reduce((acc, p, i, arr) => {{
+    return text.split(/([。！？!?])\\s*|\\.\\s+|\\n+/).reduce((acc, p, i, arr) => {{
       if (/[。！？!?]/.test(p) && acc.length > 0) {{
         acc[acc.length - 1] += p;
       }} else if (p && p.trim()) {{

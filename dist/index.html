@@ -411,7 +411,7 @@
     <div class="kpi-card">
       <div class="kpi-label">时间窗</div>
       <div class="kpi-value" data-count="7">7</div>
-      <div class="kpi-sub">天 · 2026-07-15 20:22 ~ 2026-07-22 20:22</div>
+      <div class="kpi-sub">天 · 2026-07-15 20:30 ~ 2026-07-22 20:30</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">命中总数</div>
@@ -1409,7 +1409,7 @@ https://alignment.<mark>openai</mark>.com/measuring-reward-see…</p>
   </div>
 
   <footer class="footer">
-    生成时间 2026-07-22 20:22（北京时间）· 数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供内部情报参考
+    生成时间 2026-07-22 20:30（北京时间）· 数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供内部情报参考
   </footer>
 
 </div>
@@ -1587,8 +1587,7 @@ https://alignment.<mark>openai</mark>.com/measuring-reward-see…</p>
   function splitParagraphs(text) {
     if (!text) return [];
     // 兼容写法（不用 lookbehind）：用 match + 捕获组保留分隔符
-    return text.split(/([。！？!?])\s*|\.\s+|
-+/).reduce((acc, p, i, arr) => {
+    return text.split(/([。！？!?])\s*|\.\s+|\n+/).reduce((acc, p, i, arr) => {
       if (/[。！？!?]/.test(p) && acc.length > 0) {
         acc[acc.length - 1] += p;
       } else if (p && p.trim()) {
