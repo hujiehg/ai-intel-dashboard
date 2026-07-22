@@ -316,7 +316,7 @@ def build_html(data, out_path=LATEST_HTML):
   .chip-count {{ background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 999px; font-size: 10px; font-variant-numeric: tabular-nums; }}
 
   /* --- 分类 section --- */
-  .cat-section {{ margin-bottom: 32px; }}
+  .cat-section {{ margin-bottom: 32px; scroll-margin-top: 80px; }}
   .cat-header {{
     display: flex; align-items: center; gap: 10px;
     padding: 12px 18px; margin-bottom: 14px;
@@ -598,6 +598,13 @@ def build_html(data, out_path=LATEST_HTML):
       chip.classList.add('active');
       activeFilter = chip.dataset.filter;
       applyFilters();
+      // 滚动到目标 section（考虑 sticky 控制栏高度），"全部" 不滚动
+      if (activeFilter !== 'all') {{
+        const target = document.getElementById('cat-' + activeFilter);
+        if (target) {{
+          setTimeout(() => target.scrollIntoView({{ behavior: 'smooth', block: 'start' }}), 60);
+        }}
+      }}
     }});
   }});
 

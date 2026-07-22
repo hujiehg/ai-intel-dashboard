@@ -171,7 +171,7 @@
   .chip-count { background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 999px; font-size: 10px; font-variant-numeric: tabular-nums; }
 
   /* --- 分类 section --- */
-  .cat-section { margin-bottom: 32px; }
+  .cat-section { margin-bottom: 32px; scroll-margin-top: 80px; }
   .cat-header {
     display: flex; align-items: center; gap: 10px;
     padding: 12px 18px; margin-bottom: 14px;
@@ -316,7 +316,7 @@
     <div class="kpi-card">
       <div class="kpi-label">时间窗</div>
       <div class="kpi-value" data-count="7">7</div>
-      <div class="kpi-sub">天 · 2026-07-15 17:31 ~ 2026-07-22 17:31</div>
+      <div class="kpi-sub">天 · 2026-07-15 17:35 ~ 2026-07-22 17:35</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">命中总数</div>
@@ -1262,7 +1262,7 @@ https://alignment.<mark>openai</mark>.com/measuring-reward-see…</p>
   </div>
 
   <footer class="footer">
-    生成时间 2026-07-22 17:31（北京时间）· 数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供内部情报参考
+    生成时间 2026-07-22 17:35（北京时间）· 数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供内部情报参考
   </footer>
 
 </div>
@@ -1366,6 +1366,13 @@ https://alignment.<mark>openai</mark>.com/measuring-reward-see…</p>
       chip.classList.add('active');
       activeFilter = chip.dataset.filter;
       applyFilters();
+      // 滚动到目标 section（考虑 sticky 控制栏高度），"全部" 不滚动
+      if (activeFilter !== 'all') {
+        const target = document.getElementById('cat-' + activeFilter);
+        if (target) {
+          setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+        }
+      }
     });
   });
 
