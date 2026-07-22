@@ -622,10 +622,7 @@ def build_html(data, out_path=LATEST_HTML):
     <button class="modal-close" id="modalClose" aria-label="关闭">×</button>
     <div class="modal-cat" id="modalCat"></div>
     <h2 class="modal-title" id="modalTitle"></h2>
-    <div class="modal-title-en" id="modalTitleEn"></div>
-    <div class="modal-meta" id="modalMeta"></div>
     <div class="modal-summary" id="modalSummary"></div>
-    <div class="modal-hits" id="modalHits"></div>
     <a class="modal-link" id="modalLink" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
   </div>
 </div>
@@ -756,10 +753,7 @@ def build_html(data, out_path=LATEST_HTML):
   const overlay = document.getElementById('modalOverlay');
   const mCat = document.getElementById('modalCat');
   const mTitle = document.getElementById('modalTitle');
-  const mTitleEn = document.getElementById('modalTitleEn');
-  const mMeta = document.getElementById('modalMeta');
   const mSummary = document.getElementById('modalSummary');
-  const mHits = document.getElementById('modalHits');
   const mLink = document.getElementById('modalLink');
   const mClose = document.getElementById('modalClose');
   const highlightTerms = {json.dumps(highlight_terms)};
@@ -798,33 +792,17 @@ def build_html(data, out_path=LATEST_HTML):
       return acc;
     }}, []).map(s => s.trim()).filter(Boolean);
   }}
-  // 从 URL 提取 host 作为参考
-  function urlHost(u) {{
-    try {{ return new URL(u).hostname.replace(/^www\./, ''); }} catch(e) {{ return ''; }}
-  }}
-
   function openModal(idx) {{
     const it = itemsData[idx];
     if (!it) return;
     overlay.style.setProperty('--m-cat-color', it.category_color);
     mCat.textContent = it.category_label;
     mTitle.innerHTML = hl(it.title);
-    if (it.title_en) {{
-      mTitleEn.innerHTML = '<span class="en-label">英文原标题 · ' + esc(urlHost(it.url)) + '</span>' + esc(it.title_en);
-      mTitleEn.style.display = '';
-    }} else {{
-      mTitleEn.style.display = 'none';
-    }}
-    mMeta.innerHTML = '<span class="m-seq">#' + it.seq + '</span>' +
-                      '<span class="m-sep">/</span><span class="m-src">' + esc(it.source) + '</span>' +
-                      '<span class="m-sep">/</span><span>' + it.time_abs + ' 北京时间</span>' +
-                      '<span class="m-sep">/</span><span>' + it.time_rel + '</span>';
     // 拆段展示完整摘要
     const paras = splitParagraphs(it.summary);
     mSummary.innerHTML = paras.length > 1
       ? paras.map(p => '<p>' + hl(p) + '</p>').join('')
       : hl(it.summary);
-    mHits.innerHTML = it.hits.map(h => '<span class="hit-tag">' + esc(h) + '</span>').join('');
     mLink.href = it.url;
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
