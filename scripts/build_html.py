@@ -1,8 +1,4 @@
-"""根据合并后的数据生成单文件 HTML 看板 — Dark Editorial Intelligence 风格
-
-设计方向：深色 editorial 情报终端，衬线标题 + 无衬线正文，
-单一琥珀金强调色，避开 glassmorphism/彩色光斑/渐变文字等 AI slop。
-"""
+"""根据合并后的数据生成单文件 HTML 看板 — Fluent Design + Glassmorphism 风格"""
 import html
 import re
 import sys
@@ -16,15 +12,6 @@ from config import (
 )
 
 BJ_TZ = timezone(timedelta(hours=8))
-
-# 深色主题下的分类色（muted，适配深色背景）
-CATEGORY_COLOR_DARK = {
-    "模型发布/更新": "#a78bfa",  # 紫
-    "产品发布/更新": "#60a5fa",  # 蓝
-    "行业动态":     "#f59e0b",  # 琥珀
-    "论文研究":     "#34d399",  # 翡翠
-    "技巧与观点":   "#f472b6",  # 粉
-}
 
 
 def _truncate(s, n=SUMMARY_MAX_CHARS):
@@ -59,16 +46,16 @@ def _relative_time(iso_str, now_utc):
     if secs < 0:
         return "刚刚"
     if secs < 60:
-        return f"{secs}秒前"
+        return f"{secs} 秒前"
     if secs < 3600:
-        return f"{secs // 60}分钟前"
+        return f"{secs // 60} 分钟前"
     if secs < 86400:
-        return f"{secs // 3600}小时前"
+        return f"{secs // 3600} 小时前 · {bj.strftime('%H:%M')}"
     if secs < 86400 * 2:
         return f"昨天 {bj.strftime('%H:%M')}"
     if secs < 86400 * 7:
-        return f"{secs // 86400}天前"
-    return bj.strftime("%m-%d")
+        return f"{secs // 86400} 天前 · {bj.strftime('%m-%d %H:%M')}"
+    return bj.strftime("%m-%d %H:%M")
 
 
 def _absolute_time(iso_str):
@@ -84,18 +71,14 @@ def _absolute_time(iso_str):
 def build_html(data, out_path=LATEST_HTML):
     now_utc = datetime.now(timezone.utc)
     highlight_terms = data["highlight_terms"]
-    window_start_bj = (now_utc - timedelta(days=WINDOW_DAYS)).astimezone(BJ_TZ).strftime("%m/%d %H:%M")
-    now_bj = now_utc.astimezone(BJ_TZ).strftime("%m/%d %H:%M")
+    window_start_bj = (now_utc - timedelta(days=WINDOW_DAYS)).astimezone(BJ_TZ).strftime("%Y-%m-%d %H:%M")
+    now_bj = now_utc.astimezone(BJ_TZ).strftime("%Y-%m-%d %H:%M")
 
-    # --- 分类色映射（深色版） ---
-    def cat_color(label):
-        return CATEGORY_COLOR_DARK.get(label, "#d4a574")
-
-    # --- sections ---
+    # --- sections HTML ---
     sections_html = []
     for s in data["sections"]:
         label = s["label"]
-        color = cat_color(label)
+        style = CATEGORY_STYLE[label]
         items_html = []
         for it in s["items"]:
             seq = it["seq"]
@@ -107,62 +90,58 @@ def build_html(data, out_path=LATEST_HTML):
             url = html.escape(it.get("url") or "")
             hits = it.get("hits", [])
             hits_html = "".join(
-                f'<span class="hit">{html.escape(h)}</span>' for h in hits
+                f'<span class="hit-tag" data-hit="{html.escape(h)}">{html.escape(h)}</span>' for h in hits
             )
             cat = it.get("category") or "industry"
-            items_html.append(f"""        <article class="entry reveal" data-category="{cat}" data-hits="{','.join(hits)}" style="--c:{color}">
-          <span class="seq">{seq:02d}</span>
-          <div class="entry-body">
-            <div class="entry-head">
-              <a class="entry-title" href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>
-              <div class="entry-hits">{hits_html}</div>
+            items_html.append(f"""        <article class="card reveal" data-category="{cat}" data-hits="{','.join(hits)}" style="--cat-color:{style['color']}">
+          <div class="card-shine"></div>
+          <div class="seq-badge">{seq}</div>
+          <div class="card-body">
+            <div class="card-head">
+              <a class="card-title" href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>
+              <div class="card-hits">{hits_html}</div>
             </div>
-            <div class="entry-meta">
-              <span class="src" title="{source}">{source}</span>
-              <span class="sep">/</span>
-              <time class="when" title="{abs_t} 北京时间">{rel}</time>
+            <div class="card-meta">
+              <span class="source" title="{source}">{source}</span>
+              <span class="dot">·</span>
+              <span class="time" title="{abs_t} 北京时间">{rel}</span>
             </div>
-            {f'<p class="entry-summary">{summary}</p>' if summary else ''}
+            {f'<p class="card-summary">{summary}</p>' if summary else ''}
+            <a class="card-link" href="{url}" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
           </div>
-          <a class="entry-arrow" href="{url}" target="_blank" rel="noopener noreferrer" aria-label="阅读原文">→</a>
         </article>""")
         sections_html.append(f"""    <section class="cat-section" id="cat-{s['category']}" data-cat="{s['category']}">
-      <div class="cat-header" style="--c:{color}">
-        <span class="cat-label">{label}</span>
+      <header class="cat-header" style="--cat-color:{style['color']};--cat-bg:{style['bg']}">
+        <span class="cat-dot"></span>
+        <h2 class="cat-title">{label}</h2>
         <span class="cat-count">{len(s['items'])}</span>
-      </div>
-      <div class="cat-entries">
+      </header>
+      <div class="cat-items">
         {''.join(items_html)}
       </div>
     </section>""")
 
-    # --- 顶部内联统计（替代 KPI 卡片网格） ---
+    # --- KPI ---
     cat_counts = data["category_counts"]
     total = data["total"]
-    stat_parts = [f'<span class="stat-num" data-count="{total}">0</span><span class="stat-unit"> 条动态</span>']
-    stat_parts.append(f'<span class="stat-sep">·</span><span>{WINDOW_DAYS}天窗口</span>')
-    stat_parts.append(f'<span class="stat-sep">·</span><span>{len(COMPANIES)}家公司</span>')
-    stat_parts.append(f'<span class="stat-sep">·</span><span class="stat-window">{window_start_bj} → {now_bj}</span>')
-    stats_html = '<div class="stats">' + ''.join(stat_parts) + '</div>'
-
-    # --- 分类分布内联条 ---
     max_cat = max(cat_counts.values()) if cat_counts else 1
-    dist_html = '<div class="dist">'
-    for k, v in cat_counts.items():
-        c = cat_color(k)
-        dist_html += f'<span class="dist-item" style="--c:{c}" title="{k}: {v}"><span class="dist-bar" style="width:{v/max_cat*100:.0f}%"></span><span class="dist-label">{k}</span><span class="dist-num">{v}</span></span>'
-    dist_html += '</div>'
-
-    # --- 关键词 ---
+    cat_dist_html = "".join(
+        f"""<div class="cat-bar-row">
+      <span class="cat-bar-label" style="color:{CATEGORY_STYLE[k]['color']}">{k}</span>
+      <div class="cat-bar-track"><div class="cat-bar-fill" data-target="{v/max_cat*100:.0f}" style="--fill-color:{CATEGORY_STYLE[k]['color']}"></div></div>
+      <span class="cat-bar-num">{v}</span>
+    </div>"""
+        for k, v in cat_counts.items()
+    )
     keywords_html = "".join(
-        f'<span class="kw">{html.escape(kw)}</span>' for kw in data["keywords"]
+        f'<span class="kw-chip">{html.escape(kw)}</span>' for kw in data["keywords"]
     )
 
-    # --- 筛选 chips ---
-    filter_chips = f'<button class="chip active" data-filter="all">全部<span>{total}</span></button>'
+    # --- category filter chips ---
+    filter_chips_html = '<button class="filter-chip active" data-filter="all">全部 <span class="chip-count">' + str(total) + '</span></button>'
     for s in data["sections"]:
-        c = cat_color(s["label"])
-        filter_chips += f'<button class="chip" data-filter="{s["category"]}" style="--c:{c}">{s["label"]}<span>{len(s["items"])}</span></button>'
+        st = CATEGORY_STYLE[s["label"]]
+        filter_chips_html += f'<button class="filter-chip" data-filter="{s["category"]}" style="--chip-color:{st["color"]}">{s["label"]} <span class="chip-count">{len(s["items"])}</span></button>'
 
     full_html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -172,240 +151,284 @@ def build_html(data, out_path=LATEST_HTML):
 <title>顶尖 AI 公司动态情报看板 · 近 7 天</title>
 <style>
   :root {{
-    --bg: #0d1117;
-    --bg-2: #161b22;
-    --bg-3: #1c2128;
-    --border: #30363d;
-    --border-2: #21262d;
-    --text: #e6edf3;
-    --text-2: #8b949e;
-    --text-3: #6e7681;
-    --accent: #d4a574;
-    --accent-dim: rgba(212,165,116,0.12);
-    --serif: ui-serif, Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
-    --ease: cubic-bezier(0.25, 1, 0.5, 1);
+    --bg-base: #f0f2f5;
+    --text: #1a1a2e;
+    --text-2: #4a4a6a;
+    --text-3: #8a8aa0;
+    --glass-bg: rgba(255,255,255,0.55);
+    --glass-bg-strong: rgba(255,255,255,0.72);
+    --glass-border: rgba(255,255,255,0.6);
+    --glass-border-hover: rgba(255,255,255,0.9);
+    --shadow-sm: 0 1px 2px rgba(20,20,50,0.04), 0 2px 8px rgba(20,20,50,0.04);
+    --shadow-md: 0 4px 16px rgba(20,20,50,0.06), 0 8px 32px rgba(20,20,50,0.04);
+    --shadow-lg: 0 8px 32px rgba(20,20,50,0.08), 0 16px 48px rgba(20,20,50,0.06);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
   }}
 
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   html {{ scroll-behavior: smooth; }}
   body {{
-    font-family: var(--sans);
-    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg-base);
     color: var(--text);
     line-height: 1.6;
-    font-size: 15px;
+    font-size: 14px;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+    overflow-x: hidden;
   }}
 
-  /* 极淡网格背景纹理（替代彩色光斑） */
-  body::before {{
-    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background-image:
-      linear-gradient(rgba(48,54,61,0.25) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(48,54,61,0.25) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
-    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
+  /* --- 流动背景光斑 --- */
+  .bg-orbs {{
+    position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  }}
+  .orb {{
+    position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35;
+    animation: orb-float 28s var(--ease) infinite;
+  }}
+  .orb-1 {{ width: 520px; height: 520px; background: radial-gradient(circle, #a78bfa, transparent 70%); top: -120px; left: -80px; animation-delay: 0s; }}
+  .orb-2 {{ width: 460px; height: 460px; background: radial-gradient(circle, #60a5fa, transparent 70%); top: 30%; right: -100px; animation-delay: -7s; }}
+  .orb-3 {{ width: 400px; height: 400px; background: radial-gradient(circle, #f9a8d4, transparent 70%); bottom: -100px; left: 25%; animation-delay: -14s; }}
+  .orb-4 {{ width: 340px; height: 340px; background: radial-gradient(circle, #fbbf24, transparent 70%); top: 55%; left: 10%; animation-delay: -21s; opacity: 0.25; }}
+  @keyframes orb-float {{
+    0%, 100% {{ transform: translate(0,0) scale(1); }}
+    25% {{ transform: translate(60px,-40px) scale(1.08); }}
+    50% {{ transform: translate(-30px,50px) scale(0.95); }}
+    75% {{ transform: translate(40px,30px) scale(1.05); }}
   }}
 
-  /* 顶部进度条 */
-  .progress {{ position: fixed; top: 0; left: 0; height: 2px; width: 0%; background: var(--accent); z-index: 100; transition: width 0.1s linear; }}
-
-  .wrap {{ position: relative; z-index: 1; max-width: 920px; margin: 0 auto; padding: 48px 24px 80px; }}
-
-  /* --- Hero（editorial 风格，不用卡片网格） --- */
-  .hero {{ margin-bottom: 40px; }}
-  .hero-eyebrow {{
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em;
-    text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
-    display: flex; align-items: center; gap: 8px;
+  /* --- 顶部进度条 --- */
+  .scroll-progress {{
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, #7c3aed, #2563eb, #db2777);
+    z-index: 100; transition: width 0.1s linear;
+    box-shadow: 0 0 8px rgba(124,58,237,0.4);
   }}
-  .hero-eyebrow::before {{ content: ''; width: 24px; height: 1px; background: var(--accent); }}
+
+  .container {{ position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 28px 20px 80px; }}
+
+  /* --- Hero --- */
+  .hero {{
+    position: relative;
+    border-radius: 24px;
+    padding: 40px 36px 32px;
+    margin-bottom: 20px;
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }}
+  .hero::before {{
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(124,58,237,0.06), rgba(37,99,235,0.04) 50%, rgba(219,39,119,0.05));
+    pointer-events: none;
+  }}
+  .hero-top {{ position: relative; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; }}
   .hero h1 {{
-    font-family: var(--serif); font-size: clamp(32px, 5vw, 48px); font-weight: 400;
-    line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 16px; color: var(--text);
+    font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #4c1d95 50%, #1e40af 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }}
-  .hero h1 em {{ font-style: italic; color: var(--accent); font-weight: 400; }}
-  .hero-sub {{ font-size: 15px; color: var(--text-2); max-width: 580px; line-height: 1.7; margin-bottom: 24px; }}
-  .hero-kw {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }}
-  .kw {{
-    font-family: var(--mono); font-size: 12px; padding: 4px 10px;
-    border: 1px solid var(--border); border-radius: 4px; color: var(--text-2);
-    background: var(--bg-2); transition: border-color 0.2s, color 0.2s;
+  .hero .subtitle {{ font-size: 14px; color: var(--text-2); }}
+  .hero .badge {{
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.5); border: 1px solid var(--glass-border);
+    padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--text-2);
+    backdrop-filter: blur(8px);
   }}
-  .kw:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .hero .badge::before {{ content: ''; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981; }}
+  .hero-kw {{ position: relative; margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }}
+  .hero-kw .kw-chip {{
+    background: rgba(255,255,255,0.4); border: 1px solid var(--glass-border);
+    padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--text);
+    backdrop-filter: blur(8px); transition: transform 0.2s var(--ease), background 0.2s;
+  }}
+  .hero-kw .kw-chip:hover {{ transform: translateY(-2px); background: rgba(255,255,255,0.7); }}
 
-  /* 内联统计行 */
-  .stats {{
-    font-family: var(--mono); font-size: 13px; color: var(--text-2);
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
-    padding: 16px 0; border-top: 1px solid var(--border-2); border-bottom: 1px solid var(--border-2);
+  /* --- KPI grid --- */
+  .kpi-grid {{
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;
   }}
-  .stat-num {{ font-size: 28px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }}
-  .stat-unit {{ color: var(--text-2); }}
-  .stat-sep {{ color: var(--text-3); }}
-  .stat-window {{ color: var(--text-3); font-size: 12px; }}
-
-  /* 分类分布内联条 */
-  .dist {{ display: flex; flex-wrap: wrap; gap: 16px 24px; margin-top: 20px; }}
-  .dist-item {{ display: flex; align-items: center; gap: 8px; font-size: 12px; }}
-  .dist-bar {{
-    height: 3px; min-width: 24px; max-width: 80px; border-radius: 2px;
-    background: var(--c); transition: width 0.8s var(--ease-out);
+  .kpi-card {{
+    background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-border); border-radius: var(--radius);
+    padding: 18px 20px; box-shadow: var(--shadow-sm);
+    transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease);
+    position: relative; overflow: hidden;
   }}
-  .dist-label {{ color: var(--text-3); }}
-  .dist-num {{ color: var(--c); font-weight: 600; font-variant-numeric: tabular-nums; }}
+  .kpi-card:hover {{ transform: translateY(-3px); box-shadow: var(--shadow-md); }}
+  .kpi-label {{ font-size: 11px; color: var(--text-3); font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.6px; }}
+  .kpi-value {{ font-size: 28px; font-weight: 800; color: var(--text); line-height: 1; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }}
+  .kpi-sub {{ font-size: 11px; color: var(--text-3); margin-top: 6px; }}
+  .kpi-card.keywords .kw-chips {{ display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }}
+  .kpi-card.keywords .kw-chip {{
+    background: rgba(124,58,237,0.08); color: #6d28d9;
+    padding: 3px 9px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  }}
+  .kpi-card.distribution .cat-bar-row {{
+    display: grid; grid-template-columns: 76px 1fr 24px; align-items: center; gap: 8px; margin-top: 7px; font-size: 11px;
+  }}
+  .cat-bar-label {{ font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .cat-bar-track {{ background: rgba(0,0,0,0.05); border-radius: 4px; height: 6px; overflow: hidden; }}
+  .cat-bar-fill {{ height: 100%; width: 0%; border-radius: 4px; background: var(--fill-color); transition: width 1s var(--ease-out); }}
+  .cat-bar-num {{ text-align: right; color: var(--text-3); font-variant-numeric: tabular-nums; font-weight: 600; }}
 
-  /* --- 控制栏（唯一用 blur 的地方） --- */
-  .controls {{
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(13,17,23,0.82); backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-    border-bottom: 1px solid var(--border);
-    margin: 0 -24px 32px; padding: 14px 24px;
+  /* --- 控制栏（sticky glass） --- */
+  .control-bar {{
+    position: sticky; top: 10px; z-index: 50;
+    background: var(--glass-bg-strong); backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border: 1px solid var(--glass-border); border-radius: var(--radius);
+    padding: 12px 16px; box-shadow: var(--shadow-md); margin-bottom: 24px;
     display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
   }}
-  .search {{ flex: 1; min-width: 180px; position: relative; }}
-  .search input {{
-    width: 100%; background: var(--bg-2); border: 1px solid var(--border);
-    color: var(--text); padding: 8px 12px 8px 32px; border-radius: 6px;
-    font-family: var(--sans); font-size: 13px; outline: none;
-    transition: border-color 0.2s;
+  .search-box {{
+    flex: 1; min-width: 200px; position: relative;
   }}
-  .search input:focus {{ border-color: var(--accent); }}
-  .search input::placeholder {{ color: var(--text-3); }}
-  .search::before {{
-    content: ''; position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
-    width: 12px; height: 12px;
-    border: 1.5px solid var(--text-3); border-radius: 50%;
-    box-shadow: 4px 4px 0 -1px var(--text-3);
+  .search-box input {{
+    width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--glass-border);
+    border-radius: 10px; background: rgba(255,255,255,0.5); font-size: 13px; color: var(--text);
+    font-family: inherit; outline: none; transition: border-color 0.2s, background 0.2s;
   }}
-  .chips {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-  .chip {{
-    font-family: var(--sans); font-size: 12px; font-weight: 500;
-    padding: 6px 12px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
-    cursor: pointer; transition: all 0.2s var(--ease);
-    display: inline-flex; align-items: center; gap: 6px;
-    --c: var(--text-2);
+  .search-box input:focus {{ border-color: #7c3aed; background: rgba(255,255,255,0.85); }}
+  .search-box input::placeholder {{ color: var(--text-3); }}
+  .search-box::before {{
+    content: '🔍'; position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; opacity: 0.5;
   }}
-  .chip span {{ font-size: 10px; opacity: 0.7; font-variant-numeric: tabular-nums; }}
-  .chip:hover {{ border-color: var(--c); color: var(--text); }}
-  .chip.active {{ background: var(--c); border-color: var(--c); color: #0d1117; }}
-  .chip.active span {{ opacity: 0.6; }}
+  .filter-chips {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+  .filter-chip {{
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.4); font-size: 12px; font-weight: 600; color: var(--text-2);
+    cursor: pointer; font-family: inherit; transition: all 0.2s var(--ease);
+    --chip-color: var(--text-2);
+  }}
+  .filter-chip:hover {{ background: rgba(255,255,255,0.7); transform: translateY(-1px); }}
+  .filter-chip.active {{ background: var(--chip-color); color: #fff; border-color: var(--chip-color); }}
+  .filter-chip.active .chip-count {{ background: rgba(255,255,255,0.25); color: #fff; }}
+  .chip-count {{ background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 999px; font-size: 10px; font-variant-numeric: tabular-nums; }}
 
   /* --- 分类 section --- */
-  .cat-section {{ margin-bottom: 48px; }}
+  .cat-section {{ margin-bottom: 32px; }}
   .cat-header {{
-    display: flex; align-items: baseline; gap: 12px;
-    margin-bottom: 20px; padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-2);
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; margin-bottom: 14px;
+    background: var(--glass-bg); backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+    border-left: 4px solid var(--cat-color);
+    box-shadow: var(--shadow-sm);
   }}
-  .cat-label {{
-    font-family: var(--serif); font-size: 22px; font-weight: 400;
-    color: var(--text); letter-spacing: -0.01em;
+  .cat-dot {{
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--cat-color); box-shadow: 0 0 8px var(--cat-color);
   }}
-  .cat-label::before {{ content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 10px; vertical-align: middle; }}
+  .cat-title {{ font-size: 17px; font-weight: 700; color: var(--text); flex: 1; letter-spacing: -0.2px; }}
   .cat-count {{
-    font-family: var(--mono); font-size: 12px; color: var(--c);
-    font-variant-numeric: tabular-nums;
+    background: var(--cat-color); color: #fff; font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 999px; font-variant-numeric: tabular-nums;
   }}
 
-  /* --- 条目（不用卡片套卡片，用编辑式列表） --- */
-  .cat-entries {{ display: flex; flex-direction: column; }}
-  .entry {{
-    display: flex; align-items: flex-start; gap: 16px;
-    padding: 18px 0; border-bottom: 1px solid var(--border-2);
-    transition: background 0.2s var(--ease);
-    position: relative;
+  /* --- 卡片 --- */
+  .cat-items {{ display: flex; flex-direction: column; gap: 12px; }}
+  .card {{
+    position: relative; display: flex; gap: 16px;
+    background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-border); border-radius: var(--radius);
+    padding: 18px 20px; box-shadow: var(--shadow-sm);
+    transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s;
+    overflow: hidden;
   }}
-  .entry:last-child {{ border-bottom: none; }}
-  .entry::before {{
-    content: ''; position: absolute; left: -24px; top: 0; bottom: 0; width: 2px;
-    background: var(--c); transform: scaleY(0); transform-origin: top;
-    transition: transform 0.3s var(--ease);
+  .card:hover {{
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--cat-color);
   }}
-  .entry:hover {{ background: rgba(255,255,255,0.015); }}
-  .entry:hover::before {{ transform: scaleY(1); }}
+  /* Reveal 光效（鼠标跟随） */
+  .card-shine {{
+    position: absolute; inset: 0; border-radius: var(--radius); pointer-events: none;
+    background: radial-gradient(400px circle at var(--mx,50%) var(--my,50%), rgba(255,255,255,0.18), transparent 40%);
+    opacity: 0; transition: opacity 0.3s;
+  }}
+  .card:hover .card-shine {{ opacity: 1; }}
 
-  .seq {{
-    font-family: var(--mono); font-size: 13px; font-weight: 500;
-    color: var(--text-3); min-width: 32px; padding-top: 1px;
-    font-variant-numeric: tabular-nums; transition: color 0.2s;
+  .seq-badge {{
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--cat-color), color-mix(in srgb, var(--cat-color) 60%, #000));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--cat-color) 40%, transparent);
   }}
-  .entry:hover .seq {{ color: var(--c); }}
+  .card-body {{ flex: 1; min-width: 0; }}
+  .card-head {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }}
+  .card-title {{
+    font-size: 15px; font-weight: 600; color: var(--text); text-decoration: none;
+    line-height: 1.45; flex: 1; min-width: 0; transition: color 0.2s;
+  }}
+  .card-title:hover {{ color: var(--cat-color); }}
+  .card-hits {{ display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }}
+  .hit-tag {{
+    background: rgba(251,191,36,0.12); color: #92400e;
+    padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 600;
+    border: 1px solid rgba(251,191,36,0.3);
+  }}
+  .card-meta {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); margin-top: 8px; flex-wrap: wrap; }}
+  .source {{ font-weight: 600; color: var(--text-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .dot {{ color: var(--text-3); }}
+  .time {{ font-variant-numeric: tabular-nums; }}
+  .card-summary {{ font-size: 13px; color: var(--text-2); line-height: 1.65; margin-top: 10px; }}
+  .card-link {{
+    display: inline-block; margin-top: 10px; font-size: 12px; color: var(--cat-color);
+    text-decoration: none; font-weight: 600; transition: opacity 0.2s;
+  }}
+  .card-link:hover {{ opacity: 0.7; }}
 
-  .entry-body {{ flex: 1; min-width: 0; }}
-  .entry-head {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 6px; }}
-  .entry-title {{
-    font-size: 16px; font-weight: 500; color: var(--text); text-decoration: none;
-    line-height: 1.5; transition: color 0.2s;
-  }}
-  .entry-title:hover {{ color: var(--c); }}
-  .entry-hits {{ display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }}
-  .hit {{
-    font-family: var(--mono); font-size: 10px; font-weight: 500;
-    padding: 2px 6px; border-radius: 3px;
-    background: var(--accent-dim); color: var(--accent);
-    border: 1px solid rgba(212,165,116,0.2);
-  }}
-  .entry-meta {{
-    font-family: var(--mono); font-size: 12px; color: var(--text-3);
-    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-  }}
-  .src {{ color: var(--text-2); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .sep {{ color: var(--text-3); opacity: 0.5; }}
-  .when {{ font-variant-numeric: tabular-nums; }}
-  .entry-summary {{
-    font-size: 14px; color: var(--text-2); line-height: 1.7;
-    max-width: 680px;
-  }}
-  .entry-arrow {{
-    flex-shrink: 0; font-size: 18px; color: var(--text-3); text-decoration: none;
-    padding: 4px 8px; transition: color 0.2s, transform 0.2s var(--ease);
-    align-self: center;
-  }}
-  .entry:hover .entry-arrow {{ color: var(--c); transform: translateX(3px); }}
+  mark {{ background: rgba(251,191,36,0.35); color: #78350f; padding: 0 3px; border-radius: 3px; font-weight: 700; }}
 
-  mark {{ background: rgba(212,165,116,0.18); color: var(--accent); padding: 0 3px; border-radius: 2px; font-weight: 600; }}
-
-  /* 滚动揭示 */
-  .reveal {{ opacity: 0; transform: translateY(16px); transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); }}
+  /* --- 滚动揭示动画 --- */
+  .reveal {{ opacity: 0; transform: translateY(20px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }}
   .reveal.visible {{ opacity: 1; transform: translateY(0); }}
 
-  /* 空状态 */
-  .empty {{ text-align: center; padding: 60px 20px; color: var(--text-3); font-family: var(--serif); font-size: 18px; font-style: italic; }}
-
-  /* Footer */
-  .footer {{
-    margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border-2);
-    font-family: var(--mono); font-size: 11px; color: var(--text-3);
-    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  /* --- 空状态 --- */
+  .empty-state {{
+    text-align: center; padding: 40px 20px; color: var(--text-3);
+    background: var(--glass-bg); border-radius: var(--radius); border: 1px dashed var(--glass-border);
   }}
-  .footer a {{ color: var(--accent); text-decoration: none; }}
 
-  /* 响应式 */
+  /* --- Footer --- */
+  .footer {{
+    text-align: center; font-size: 12px; color: var(--text-3);
+    padding: 32px 0 0; border-top: 1px solid var(--glass-border); margin-top: 24px;
+  }}
+  .footer a {{ color: #6d28d9; text-decoration: none; font-weight: 600; }}
+
+  /* --- 响应式 --- */
   @media (max-width: 768px) {{
-    .wrap {{ padding: 32px 16px 60px; }}
-    .hero h1 {{ font-size: 28px; }}
-    .controls {{ margin: 0 -16px 24px; padding: 12px 16px; }}
-    .entry {{ gap: 12px; }}
-    .entry-title {{ font-size: 15px; }}
-    .seq {{ min-width: 28px; font-size: 12px; }}
-    .entry-arrow {{ display: none; }}
-    .src {{ max-width: 200px; }}
+    .kpi-grid {{ grid-template-columns: repeat(2, 1fr); }}
+    .hero {{ padding: 28px 22px 24px; }}
+    .hero h1 {{ font-size: 22px; }}
+    .card {{ padding: 14px 16px; gap: 12px; }}
+    .card-title {{ font-size: 14px; }}
+    .seq-badge {{ width: 28px; height: 28px; font-size: 12px; }}
+    .container {{ padding: 18px 14px 50px; }}
+    .control-bar {{ padding: 10px 12px; }}
   }}
   @media (max-width: 480px) {{
-    .entry-head {{ flex-direction: column; align-items: flex-start; }}
-    .entry-hits {{ margin-top: 4px; }}
-    .stats {{ font-size: 12px; }}
-    .stat-num {{ font-size: 22px; }}
+    .kpi-grid {{ grid-template-columns: 1fr; }}
+    .card-head {{ flex-direction: column; align-items: flex-start; }}
+    .card-hits {{ margin-top: 6px; }}
+    .hero h1 {{ font-size: 20px; }}
   }}
   @media (prefers-reduced-motion: reduce) {{
+    .orb {{ animation: none; }}
     .reveal {{ opacity: 1; transform: none; transition: none; }}
     * {{ scroll-behavior: auto; }}
   }}
@@ -413,122 +436,178 @@ def build_html(data, out_path=LATEST_HTML):
 </head>
 <body>
 
-<div class="progress" id="progress"></div>
+<div class="scroll-progress" id="scrollProgress"></div>
+<div class="bg-orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="orb orb-4"></div>
+</div>
 
-<div class="wrap">
+<div class="container">
 
   <header class="hero">
-    <div class="hero-eyebrow">AI Intelligence Brief · Daily</div>
-    <h1>顶尖 AI 公司<br>近七日<em>动态情报</em></h1>
-    <p class="hero-sub">追踪 Anthropic、OpenAI、DeepSeek、Kimi、Qwen 五家头部 AI 公司的模型发布、产品更新、行业动态、论文研究与技巧观点。数据来自 aihot.virxact.com，每日 09:00 自动刷新。</p>
+    <div class="hero-top">
+      <div>
+        <h1>顶尖 AI 公司动态情报看板</h1>
+        <div class="subtitle">追踪 Anthropic · OpenAI · DeepSeek · Kimi · Qwen 近 7 天关键动态</div>
+      </div>
+      <span class="badge">数据来自 aihot.virxact.com</span>
+    </div>
     <div class="hero-kw">{keywords_html}</div>
-    {stats_html}
-    {dist_html}
   </header>
 
-  <div class="controls">
-    <div class="search">
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">时间窗</div>
+      <div class="kpi-value" data-count="{WINDOW_DAYS}">{WINDOW_DAYS}</div>
+      <div class="kpi-sub">天 · {window_start_bj} ~ {now_bj}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">命中总数</div>
+      <div class="kpi-value" data-count="{total}">0</div>
+      <div class="kpi-sub">条去重后的精选动态</div>
+    </div>
+    <div class="kpi-card keywords">
+      <div class="kpi-label">追踪关键词</div>
+      <div class="kw-chips">{keywords_html}</div>
+    </div>
+    <div class="kpi-card distribution">
+      <div class="kpi-label">分类分布</div>
+      {cat_dist_html}
+    </div>
+  </div>
+
+  <div class="control-bar">
+    <div class="search-box">
       <input type="text" id="searchInput" placeholder="搜索标题、来源、摘要…" autocomplete="off">
     </div>
-    <div class="chips" id="chips">
-      {filter_chips}
+    <div class="filter-chips" id="filterChips">
+      {filter_chips_html}
     </div>
   </div>
 
   {''.join(sections_html)}
 
-  <div class="empty" id="empty" style="display:none;">没有匹配的动态</div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    没有匹配的动态。试试换一个关键词或清除筛选。
+  </div>
 
   <footer class="footer">
-    <span>生成于 {now_bj} 北京时间</span>
-    <span>数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供情报参考</span>
+    生成时间 {now_bj}（北京时间）· 数据源 <a href="https://aihot.virxact.com" target="_blank" rel="noopener noreferrer">aihot.virxact.com</a> · 仅供内部情报参考
   </footer>
 
 </div>
 
 <script>
 (function() {{
-  // 滚动进度
-  const p = document.getElementById('progress');
-  const update = () => {{
+  // --- 滚动进度条 ---
+  const progress = document.getElementById('scrollProgress');
+  function updateProgress() {{
     const h = document.documentElement;
-    p.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
-  }};
-  window.addEventListener('scroll', update, {{ passive: true }});
-  update();
+    const scrolled = h.scrollTop / (h.scrollHeight - h.clientHeight);
+    progress.style.width = (scrolled * 100) + '%';
+  }}
+  window.addEventListener('scroll', updateProgress, {{ passive: true }});
+  updateProgress();
 
-  // 滚动揭示
+  // --- 滚动揭示动画 ---
   const io = new IntersectionObserver((entries) => {{
     entries.forEach((e, i) => {{
       if (e.isIntersecting) {{
-        setTimeout(() => e.target.classList.add('visible'), Math.min(i * 30, 240));
+        setTimeout(() => e.target.classList.add('visible'), i * 40);
         io.unobserve(e.target);
       }}
     }});
-  }}, {{ threshold: 0.06, rootMargin: '0px 0px -30px 0px' }});
+  }}, {{ threshold: 0.08, rootMargin: '0px 0px -40px 0px' }});
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
-  // count-up
-  document.querySelectorAll('.stat-num[data-count]').forEach(el => {{
+  // --- KPI 数字 count-up ---
+  document.querySelectorAll('.kpi-value[data-count]').forEach(el => {{
     const target = parseInt(el.dataset.count, 10);
-    if (!target) return;
-    let cur = 0; const step = Math.max(1, Math.ceil(target / 28));
+    if (target <= 0) return;
+    let cur = 0;
+    const step = Math.max(1, Math.ceil(target / 30));
     const tick = () => {{
       cur = Math.min(target, cur + step);
       el.textContent = cur;
       if (cur < target) requestAnimationFrame(tick);
     }};
-    setTimeout(tick, 250);
+    // 延迟启动，等页面渲染
+    setTimeout(tick, 200);
   }});
 
-  // 分布条动画
+  // --- 分类分布条形图动画 ---
   setTimeout(() => {{
-    document.querySelectorAll('.dist-bar').forEach(el => {{
-      const w = el.style.width; el.style.width = '0';
-      requestAnimationFrame(() => {{ el.style.width = w; }});
+    document.querySelectorAll('.cat-bar-fill').forEach(el => {{
+      el.style.width = el.dataset.target + '%';
     }});
-  }}, 400);
+  }}, 300);
 
-  // 筛选 + 搜索
-  const chips = document.querySelectorAll('.chip');
+  // --- 卡片鼠标跟随光效 ---
+  document.querySelectorAll('.card').forEach(card => {{
+    card.addEventListener('mousemove', (e) => {{
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    }});
+  }});
+
+  // --- 分类筛选 + 关键词搜索 ---
+  const chips = document.querySelectorAll('.filter-chip');
   const searchInput = document.getElementById('searchInput');
-  const entries = document.querySelectorAll('.entry');
+  const cards = document.querySelectorAll('.card');
   const sections = document.querySelectorAll('.cat-section');
-  const empty = document.getElementById('empty');
-  let filter = 'all', term = '';
+  const emptyState = document.getElementById('emptyState');
+  let activeFilter = 'all';
+  let searchTerm = '';
 
-  function apply() {{
-    let vis = 0;
-    entries.forEach(e => {{
-      const cat = e.dataset.category;
-      const hits = (e.dataset.hits || '').toLowerCase();
-      const title = e.querySelector('.entry-title').textContent.toLowerCase();
-      const src = e.querySelector('.src').textContent.toLowerCase();
-      const sum = (e.querySelector('.entry-summary')?.textContent || '').toLowerCase();
-      const t = term.toLowerCase();
-      const ok = (filter === 'all' || cat === filter) &&
-                 (!t || title.includes(t) || src.includes(t) || sum.includes(t) || hits.includes(t));
-      e.style.display = ok ? '' : 'none';
-      if (ok) vis++;
+  function applyFilters() {{
+    let visibleTotal = 0;
+    cards.forEach(card => {{
+      const cat = card.dataset.category;
+      const hits = card.dataset.hits || '';
+      const title = card.querySelector('.card-title').textContent.toLowerCase();
+      const source = card.querySelector('.source').textContent.toLowerCase();
+      const summary = (card.querySelector('.card-summary')?.textContent || '').toLowerCase();
+      const term = searchTerm.toLowerCase();
+
+      const catMatch = (activeFilter === 'all') || (cat === activeFilter);
+      const searchMatch = !term || title.includes(term) || source.includes(term) || summary.includes(term) || hits.toLowerCase().includes(term);
+
+      if (catMatch && searchMatch) {{
+        card.style.display = '';
+        visibleTotal++;
+      }} else {{
+        card.style.display = 'none';
+      }}
     }});
-    sections.forEach(s => {{
-      const v = s.querySelectorAll('.entry:not([style*="display: none"])').length;
-      s.style.display = v > 0 ? '' : 'none';
+
+    // 隐藏没有可见卡片的 section
+    sections.forEach(sec => {{
+      const visible = sec.querySelectorAll('.card:not([style*="display: none"])').length;
+      sec.style.display = visible > 0 ? '' : 'none';
     }});
-    empty.style.display = vis === 0 ? 'block' : 'none';
+
+    emptyState.style.display = visibleTotal === 0 ? 'block' : 'none';
   }}
 
-  chips.forEach(c => c.addEventListener('click', () => {{
-    chips.forEach(x => x.classList.remove('active'));
-    c.classList.add('active');
-    filter = c.dataset.filter;
-    apply();
-  }}));
+  chips.forEach(chip => {{
+    chip.addEventListener('click', () => {{
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      applyFilters();
+    }});
+  }});
 
-  let timer;
-  searchInput.addEventListener('input', e => {{
-    clearTimeout(timer);
-    timer = setTimeout(() => {{ term = e.target.value.trim(); apply(); }}, 120);
+  let searchTimer;
+  searchInput.addEventListener('input', (e) => {{
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {{
+      searchTerm = e.target.value.trim();
+      applyFilters();
+    }}, 120);
   }});
 }})();
 </script>
