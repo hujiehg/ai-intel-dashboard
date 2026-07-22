@@ -24,13 +24,19 @@ def _truncate(s, n=SUMMARY_MAX_CHARS):
 
 
 def _highlight(text, terms):
+    """HTML 转义后高亮关键词（case-insensitive，复合词不拆）
+
+    用 (?<![a-zA-Z0-9-]) 和 (?![a-zA-Z0-9-]) 包围关键词，避免在
+    "Qwen-Image-3.0" 这类连字符复合词中单独高亮 "Qwen"。
+    """
     if not text:
         return ""
     safe = html.escape(text)
     sorted_terms = sorted(set(terms), key=len, reverse=True)
     if not sorted_terms:
         return safe
-    pattern = re.compile("(" + "|".join(re.escape(t) for t in sorted_terms) + ")", re.IGNORECASE)
+    parts = [rf"(?<![a-zA-Z0-9-])({re.escape(t)})(?![a-zA-Z0-9-])" for t in sorted_terms]
+    pattern = re.compile("|".join(parts), re.IGNORECASE)
     return pattern.sub(lambda m: f'<mark>{html.escape(m.group(0))}</mark>', safe)
 
 
@@ -407,7 +413,7 @@ def build_html(data, out_path=LATEST_HTML):
   }}
   .card-link:hover {{ opacity: 0.7; }}
 
-  mark {{ background: rgba(251,191,36,0.35); color: #78350f; padding: 0 3px; border-radius: 3px; font-weight: 700; }}
+  mark {{ background: transparent; color: var(--accent); font-weight: 700; padding: 0; border-radius: 0; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }}
 
   /* --- 滚动揭示动画 --- */
   .reveal {{ opacity: 0; transform: translateY(20px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }}
@@ -499,8 +505,16 @@ def build_html(data, out_path=LATEST_HTML):
     margin-bottom: 8px; letter-spacing: -0.3px; position: relative;
   }}
   .modal-title-en {{
-    font-size: 14px; color: var(--text-3); font-style: italic;
-    margin-bottom: 18px; position: relative; line-height: 1.5;
+    font-size: 13px; color: var(--text-2); font-style: italic;
+    margin-bottom: 20px; position: relative; line-height: 1.6;
+    padding: 10px 14px; background: rgba(255,255,255,0.35);
+    border: 1px solid var(--glass-border); border-radius: 10px;
+    border-left: 3px solid var(--m-cat-color, #7c3aed);
+  }}
+  .modal-title-en .en-label {{
+    display: block; font-size: 10px; font-weight: 600;
+    color: var(--text-3); font-style: normal; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 4px;
   }}
   .modal-meta {{
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -515,6 +529,8 @@ def build_html(data, out_path=LATEST_HTML):
     font-size: 15px; color: var(--text); line-height: 1.8; margin-bottom: 20px;
     position: relative;
   }}
+  .modal-summary p {{ margin-bottom: 12px; }}
+  .modal-summary p:last-child {{ margin-bottom: 0; }}
   .modal-hits {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px; position: relative; }}
   .modal-hits .hit-tag {{ font-size: 12px; padding: 3px 10px; }}
   .modal-link {{
@@ -757,8 +773,20 @@ def build_html(data, out_path=LATEST_HTML):
     const safe = esc(text);
     const terms = [...new Set(highlightTerms)].sort((a,b) => b.length - a.length);
     if (!terms.length) return safe;
-    const re = new RegExp('(' + terms.map(t => t.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&')).join('|') + ')', 'gi');
+    // 用 lookbehind/lookahead 排除连字符相邻，避免在 Qwen-Image-3.0 这类复合词中拆词
+    const escTerms = terms.map(t => t.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&'));
+    const re = new RegExp('(?<![a-zA-Z0-9-])(' + escTerms.join('|') + ')(?![a-zA-Z0-9-])', 'gi');
     return safe.replace(re, m => '<mark>' + m + '</mark>');
+  }}
+
+  // 把 summary 拆成多段（按句末标点 + 换行）
+  function splitParagraphs(text) {{
+    if (!text) return [];
+    return text.split(/(?<=[。！？!?])\s+|(?<=\.)\s+|\n+/).map(s => s.trim()).filter(Boolean);
+  }}
+  // 从 URL 提取 host 作为参考
+  function urlHost(u) {{
+    try {{ return new URL(u).hostname.replace(/^www\./, ''); }} catch(e) {{ return ''; }}
   }}
 
   function openModal(idx) {{
@@ -767,13 +795,21 @@ def build_html(data, out_path=LATEST_HTML):
     overlay.style.setProperty('--m-cat-color', it.category_color);
     mCat.textContent = it.category_label;
     mTitle.innerHTML = hl(it.title);
-    mTitleEn.textContent = it.title_en || '';
-    mTitleEn.style.display = it.title_en ? '' : 'none';
+    if (it.title_en) {{
+      mTitleEn.innerHTML = '<span class="en-label">英文原标题 · ' + esc(urlHost(it.url)) + '</span>' + esc(it.title_en);
+      mTitleEn.style.display = '';
+    }} else {{
+      mTitleEn.style.display = 'none';
+    }}
     mMeta.innerHTML = '<span class="m-seq">#' + it.seq + '</span>' +
                       '<span class="m-sep">/</span><span class="m-src">' + esc(it.source) + '</span>' +
                       '<span class="m-sep">/</span><span>' + it.time_abs + ' 北京时间</span>' +
                       '<span class="m-sep">/</span><span>' + it.time_rel + '</span>';
-    mSummary.innerHTML = hl(it.summary);
+    // 拆段展示完整摘要
+    const paras = splitParagraphs(it.summary);
+    mSummary.innerHTML = paras.length > 1
+      ? paras.map(p => '<p>' + hl(p) + '</p>').join('')
+      : hl(it.summary);
     mHits.innerHTML = it.hits.map(h => '<span class="hit-tag">' + esc(h) + '</span>').join('');
     mLink.href = it.url;
     overlay.classList.add('open');
