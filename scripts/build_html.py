@@ -543,6 +543,39 @@ def build_html(data, out_path=LATEST_HTML):
     position: relative;
   }}
   .modal-link:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px color-mix(in srgb, var(--m-cat-color, #7c3aed) 45%, transparent); }}
+  .modal-actions {{
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 4px; margin-bottom: 16px; position: relative;
+  }}
+  .modal-link {{ margin-top: 0; margin-bottom: 0; }}
+  .modal-load {{
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 12px 20px; border-radius: 12px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--glass-border);
+    color: var(--text-2); font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: all 0.2s var(--ease);
+  }}
+  .modal-load:hover {{ background: rgba(255,255,255,0.8); color: var(--text); border-color: var(--m-cat-color, #7c3aed); }}
+  .modal-load:disabled {{ opacity: 0.6; cursor: wait; }}
+  .modal-load.loading::before {{
+    content: ''; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }}
+  @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+  .modal-full {{
+    margin-top: 16px; padding-top: 16px;
+    border-top: 1px dashed var(--glass-border);
+    font-size: 14px; color: var(--text); line-height: 1.8;
+    position: relative; max-height: 50vh; overflow-y: auto;
+  }}
+  .modal-full p {{ margin-bottom: 10px; }}
+  .modal-full .full-meta {{
+    font-size: 11px; color: var(--text-3); margin-bottom: 10px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }}
   .card {{ cursor: pointer; }}
   .card-title {{ cursor: pointer; }}
   .card-expand {{
@@ -623,7 +656,11 @@ def build_html(data, out_path=LATEST_HTML):
     <div class="modal-cat" id="modalCat"></div>
     <h2 class="modal-title" id="modalTitle"></h2>
     <div class="modal-summary" id="modalSummary"></div>
-    <a class="modal-link" id="modalLink" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    <div class="modal-actions">
+      <button class="modal-load" id="modalLoad" type="button">加载完整内容</button>
+      <a class="modal-link" id="modalLink" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </div>
+    <div class="modal-full" id="modalFull"></div>
   </div>
 </div>
 
@@ -756,6 +793,8 @@ def build_html(data, out_path=LATEST_HTML):
   const mSummary = document.getElementById('modalSummary');
   const mLink = document.getElementById('modalLink');
   const mClose = document.getElementById('modalClose');
+  const mLoad = document.getElementById('modalLoad');
+  const mFull = document.getElementById('modalFull');
   const highlightTerms = {json.dumps(highlight_terms)};
 
   // 高亮函数（JS 版，转义 + 正则替换）
@@ -804,6 +843,13 @@ def build_html(data, out_path=LATEST_HTML):
       ? paras.map(p => '<p>' + hl(p) + '</p>').join('')
       : hl(it.summary);
     mLink.href = it.url;
+    // 重置懒加载按钮与全文区
+    mLoad.dataset.url = it.url;
+    mLoad.style.display = '';
+    mLoad.disabled = false;
+    mLoad.classList.remove('loading');
+    mLoad.textContent = '加载完整内容';
+    mFull.innerHTML = '';
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
@@ -825,6 +871,67 @@ def build_html(data, out_path=LATEST_HTML):
   overlay.addEventListener('click', (e) => {{ if (e.target === overlay) closeModal(); }});
   document.addEventListener('keydown', (e) => {{
     if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+  }});
+
+  // --- 懒加载抓全文（CORS proxy 兜底） ---
+  const PROXIES = [
+    (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+    (u) => 'https://corsproxy.io/?' + u,
+  ];
+  function tryProxies(url, idx = 0) {{
+    if (idx >= PROXIES.length) return Promise.reject(new Error('所有 proxy 均失败'));
+    return fetch(PROXIES[idx](url)).then(r => {{
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }}).catch(e => tryProxies(url, idx + 1));
+  }}
+  function extractMain(htmlStr) {{
+    const doc = new DOMParser().parseFromString(htmlStr, 'text/html');
+    // 优先找 <article> / <main>，再退回 body
+    const candidates = doc.querySelectorAll('article, main, [role=main], .post-content, .article-body, .article-content, .content');
+    let el = candidates[0];
+    if (!el || el.innerText.length < 200) el = doc.body;
+    // 清理
+    el.querySelectorAll('script, style, nav, header, footer, aside, .ad, .ads, .advertisement, .sidebar, form, button, iframe, noscript, svg').forEach(n => n.remove());
+    // 按段落提取
+    const blocks = [];
+    el.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre').forEach(n => {{
+      const t = (n.innerText || n.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (t.length > 20) blocks.push({{ tag: n.tagName.toLowerCase(), text: t }});
+    }});
+    if (blocks.length === 0) {{
+      // 兜底：直接拿 innerText
+      const all = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (all.length > 50) return `<p>${{esc(all.slice(0, 3000))}}${{all.length > 3000 ? '…' : ''}}</p>`;
+      return '';
+    }}
+    return blocks.map(b => {{
+      if (b.tag === 'h2' || b.tag === 'h3' || b.tag === 'h4') return `<h4 style="margin:14px 0 6px;font-size:15px;font-weight:700;color:var(--text);">${{esc(b.text)}}</h4>`;
+      if (b.tag === 'h1') return `<h3 style="margin:14px 0 6px;font-size:16px;font-weight:700;">${{esc(b.text)}}</h3>`;
+      if (b.tag === 'li') return `<li style="margin:4px 0;">${{esc(b.text)}}</li>`;
+      if (b.tag === 'blockquote') return `<blockquote style="border-left:3px solid var(--glass-border);padding-left:12px;color:var(--text-2);font-style:italic;">${{esc(b.text)}}</blockquote>`;
+      if (b.tag === 'pre') return `<pre style="background:rgba(0,0,0,0.05);padding:10px;border-radius:8px;overflow-x:auto;font-size:12px;">${{esc(b.text)}}</pre>`;
+      return `<p>${{esc(b.text)}}</p>`;
+    }}).join('');
+  }}
+  mLoad.addEventListener('click', async () => {{
+    const url = mLoad.dataset.url;
+    if (!url) return;
+    mLoad.disabled = true;
+    mLoad.classList.add('loading');
+    mLoad.textContent = '加载中';
+    try {{
+      const html = await tryProxies(url);
+      const content = extractMain(html);
+      if (!content) throw new Error('未提取到正文');
+      mFull.innerHTML = '<div class="full-meta">原文摘要 · ' + esc(url.replace(/^https?:\\/\\//, '')) + '</div>' + content;
+      mLoad.style.display = 'none';
+    }} catch (e) {{
+      mLoad.classList.remove('loading');
+      mLoad.disabled = false;
+      mLoad.textContent = '加载失败，点击重试';
+      console.error('Fetch full content failed:', e);
+    }}
   }});
 }})();
 </script>
