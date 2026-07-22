@@ -1,0 +1,26 @@
+# Build artifacts (local-only)
+cache/
+dashboard-history/
+ai-companies-intel-dashboard.html
+
+# WorkBuddy metadata
+.workbuddy/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# Logs
+*.log
