@@ -413,7 +413,7 @@ def build_html(data, out_path=LATEST_HTML):
   }}
   .card-link:hover {{ opacity: 0.7; }}
 
-  mark {{ background: transparent; color: var(--accent); font-weight: 700; padding: 0; border-radius: 0; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }}
+  mark {{ background: transparent; color: var(--accent); font-weight: 700; padding: 0; border-radius: 0; }}
 
   /* --- 滚动揭示动画 --- */
   .reveal {{ opacity: 0; transform: translateY(20px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }}
